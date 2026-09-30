@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Crypto AES‑256‑GCM (Web Crypto)</title>
+<style>
+:root {
+  --bg: #f5f5f7;
+  --text: #222;
+  --card: #ffffff;
+  --accent: #4a6cff;
+  --accent-hover: #2f4de0;
+  --border: #dcdcdc;
+}
+
+[data-theme="dark"] {
+  --bg: #0f0f11;
+  --text: #e5e5e5;
+  --card: #1a1a1d;
+  --accent: #6a8cff;
+  --accent-hover: #4a6cff;
+  --border: #333;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: 0.3s ease;
+}
+
+/* PAGE D'ACCUEIL */
+.center {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+}
+
+.center h1 {
+  font-size: 40px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+/* BOUTONS */
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+button:hover {
+  background: var(--accent-hover);
+}
+
+/* PAGE PRINCIPALE */
+.container {
+  max-width: 600px;
+  margin: 40px auto;
+  background: var(--card);
+  padding: 25px;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  border: 1px solid var(--border);
+}
+
+/* NAVIGATION */
+nav {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+
+nav button {
+  font-size: 14px;
+  padding: 8px 14px;
+}
+
+/* INPUTS ALIGNÉS */
+label {
+  font-weight: 600;
+  margin-top: 15px;
+  display: block;
+}
+
+input, textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 12px;
+  margin-top: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 15px;
+  box-sizing: border-box;
+  resize: none; /* lock */
+}
+
+textarea {
+  height: 120px; /* lock */
+}
+
+.hidden {
+  display: none;
+}
+
+</style>
+</head>
+<body>
+
+<!-- PAGE D'ACCUEIL -->
+<div id="home" class="center">
+  <h1>Crypto AES</h1>
+  <button onclick="openPage('encrypt')">Encrypt</button>
+  <button onclick="openPage('decrypt')">Decrypt</button>
+</div>
+
+<!-- PAGE PRINCIPALE -->
+<div id="main" class="hidden container">
+
+  <nav>
+    <div>
+      <button onclick="openPage('encrypt')">Encrypt</button>
+      <button onclick="openPage('decrypt')">Decrypt</button>
+    </div>
+
+    <button onclick="toggleTheme()">Dark / Light</button>
+  </nav>
+
+  <div id="encryptPage">
+    <h2>Encrypt</h2>
+    <label>Mot de passe :</label>
+    <input type="password" id="passwordEnc">
+
+    <label>Message :</label>
+    <textarea id="msgEnc" rows="3"></textarea>
+
+    <button onclick="doEncrypt()">Crypter</button>
+
+    <textarea id="encrypted" rows="4" readonly></textarea>
+  </div>
+
+  <div id="decryptPage" class="hidden">
+    <h2>Decrypt</h2>
+    <label>Mot de passe :</label>
+    <input type="password" id="passwordDec">
+
+    <label>JSON crypté :</label>
+    <textarea id="jsonDec" rows="4"></textarea>
+
+    <button onclick="doDecrypt()">Décrypter</button>
+
+    <p><strong>Message :</strong> <span id="decrypted"></span></p>
+  </div>
+
+</div>
+
+<script>
+  // --- NAVIGATION ---
+  function openPage(page) {
+    document.getElementById("home").classList.add("hidden");
+    document.getElementById("main").classList.remove("hidden");
+
+    document.getElementById("encryptPage").classList.add("hidden");
+    document.getElementById("decryptPage").classList.add("hidden");
+
+    if (page === "encrypt") {
+      document.getElementById("encryptPage").classList.remove("hidden");
+    } else {
+      document.getElementById("decryptPage").classList.remove("hidden");
+    }
+  }
+
+  // --- DARK / LIGHT MODE ---
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute(
+      "data-theme",
+      current === "dark" ? "light" : "dark"
+    );
+  }
+
+  // --- AES FUNCTIONS ---
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  async function deriveKey(password, salt) {
+    const baseKey = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      baseKey,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  }
+
+  function b64(bytes) {
+    return btoa(String.fromCharCode(...bytes));
+  }
+
+  function fromB64(b64str) {
+    const bin = atob(b64str);
+    return Uint8Array.from(bin, c => c.charCodeAt(0));
+  }
+
+  async function doEncrypt() {
+    const password = document.getElementById("passwordEnc").value;
+    const msg = document.getElementById("msgEnc").value;
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveKey(password, salt);
+
+    const encrypted = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      enc.encode(msg)
+    );
+
+    const payload = {
+      iv: b64(iv),
+      salt: b64(salt),
+      data: b64(new Uint8Array(encrypted)),
+    };
+
+    document.getElementById("encrypted").value =
+      JSON.stringify(payload, null, 2);
+  }
+
+  async function doDecrypt() {
+    const password = document.getElementById("passwordDec").value;
+    const json = document.getElementById("jsonDec").value;
+
+    try {
+      const payload = JSON.parse(json);
+
+      const iv = fromB64(payload.iv);
+      const salt = fromB64(payload.salt);
+      const data = fromB64(payload.data);
+
+      const key = await deriveKey(password, salt);
+
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        data
+      );
+
+      document.getElementById("decrypted").textContent =
+        dec.decode(decrypted);
+
+    } catch (e) {
+      alert("Erreur : mauvais mot de passe ou JSON invalide.");
+    }
+  }
+</script>
+
+</body>
+</html>
